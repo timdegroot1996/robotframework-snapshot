@@ -9,8 +9,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
-from . import jsonpath, serializers, store
-from .scrubbers import Scrubber, apply_all
+from . import jsonpath, serializers, store, xmlpath
+from .normalizers import Normalizer, apply_all
 
 
 class Outcome(Enum):
@@ -47,23 +47,26 @@ def prepare(
     value: Any,
     fmt: str = "auto",
     ignore=None,
-    scrubbers: Iterable[Scrubber] = (),
+    normalizers: Iterable[Normalizer] = (),
 ):
-    """Serialise, mask and scrub ``value``. Returns ``(text, extension)``."""
+    """Serialise, mask and normalise ``value``. Returns ``(text, extension)``."""
     data, extension = serializers.to_data(value, fmt)
     paths = split_paths(ignore)
     if paths:
-        if extension != serializers.JSON:
+        if extension == serializers.JSON:
+            data = copy.deepcopy(data)
+            for path in paths:
+                jsonpath.mask(data, path)
+        elif extension == serializers.XML:
+            data = serializers.canonical_xml(xmlpath.mask(data, paths))
+        else:
             raise ValueError(
-                "ignore= takes JSONPath expressions and needs structured data. "
-                "Pass a dictionary or list, use format=json for a JSON string, "
-                "or use a scrubber for plain text."
+                "ignore= needs structured data: JSONPath for a dictionary, a list or "
+                "a JSON string with format=json, XPath for XML with format=xml. "
+                "For plain text, use a normalizer."
             )
-        data = copy.deepcopy(data)
-        for path in paths:
-            jsonpath.mask(data, path)
     text = serializers.render(data, extension)
-    text = apply_all(text, scrubbers)
+    text = apply_all(text, normalizers)
     return serializers.normalize_text(text), extension
 
 

@@ -17,3 +17,6 @@ Xml Element Is Detected
 Xml File In Canonical Form
     Create File    ${OUTPUT_DIR}/config.xml    ${XML_TEXT}
     Should Match File Snapshot    ${OUTPUT_DIR}/config.xml    format=xml
+
+Xml Ignore By XPath
+    Should Match Snapshot    ${XML_TEXT}    format=xml    ignore=.//id

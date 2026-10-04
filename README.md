@@ -1,11 +1,28 @@
-# robotframework-snapshot
+# Robot Framework Snapshot
+[![PyPI - Version](https://img.shields.io/pypi/v/robotframework-snapshot.svg)](https://pypi.org/project/robotframework-snapshot)
+[![License](https://img.shields.io/pypi/l/robotframework-snapshot?cacheSeconds=600)](LICENSE)
 
-Snapshot testing for text and structured data in [Robot Framework](https://robotframework.org).
+Looking for the keywords? Here is the [Keyword Documentation](https://timdegroot1996.github.io/robotframework-snapshot/).
 
-The first run records the actual value to a file. Later runs compare against it.
-You review expected values as file diffs in version control instead of writing
-and maintaining them by hand, and one flag regenerates them when behaviour
-changes on purpose.
+Robot Framework Snapshot is a library for [Robot Framework](https://robotframework.org) that checks text and data
+against a stored expected value, without you writing that expected value by hand. The first time a test runs, the
+library saves the value to a file next to your suite. Every run after that compares against the file and fails with a
+diff when something changed. It works well for command line output, API responses, database rows, XML and generated
+files: anything where the expected value is long, tedious to type out and changes now and then on purpose.
+
+## Installation
+
+Install Robot Framework 6.1 or higher (if not already installed):
+```bash
+pip install robotframework
+```
+Install Robot Framework Snapshot:
+```bash
+pip install robotframework-snapshot
+```
+Python 3.9 or higher is required.
+
+## Getting Started
 
 ```robotframework
 *** Settings ***
@@ -18,193 +35,280 @@ Help Text Is Stable
     Should Match Snapshot    ${result.stdout}
 ```
 
-The first run writes `__snapshots__/<suite>/Help_Text_Is_Stable.txt` and passes
-with a warning. Commit that file. From then on the test fails with a diff
-whenever the output changes.
+**First run:** there is no snapshot yet, so the library writes the output of `mytool --help` to
+`__snapshots__/<suite file name>/Help_Text_Is_Stable.txt` and the test passes with a warning:
+```
+[ WARN ] Snapshot 'tests/__snapshots__/cli/Help_Text_Is_Stable.txt' did not exist and was recorded. Review and commit it.
+```
+Open the file, check that the content is what you expect, and commit it together with your tests.
 
-## Installation
+**Every run after that:** the output is compared with the file. When they differ the test fails, and the failure
+message shows exactly what changed, in the console, `log.html` and `report.html`:
+```
+Snapshot 'tests/__snapshots__/cli/Help_Text_Is_Stable.txt' does not match.
+--- snapshot: tests/__snapshots__/cli/Help_Text_Is_Stable.txt
++++ actual
+@@ -3,3 +3,3 @@
+ Options:
+-  -o, --output FILE   write results to FILE
++  -o, --output PATH   write results to PATH
+   -h, --help          show this help
 
-```bash
-pip install robotframework-snapshot
+If the change is intended, update the snapshot with: --variable REFERENCE_RUN:True
 ```
 
-Requires Python 3.9+ and Robot Framework 6.1+.
+**When the change is intended:** run once with `--variable REFERENCE_RUN:True`. Every snapshot that differs is
+overwritten with the new value and the tests pass. Review the changed files like any other change and commit them.
 
-## What you can snapshot
+## Modes
 
-| Value | Stored as | Example |
-| --- | --- | --- |
-| Text: CLI output, logs, emails, rendered templates | `.txt` | `Should Match Snapshot    ${result.stdout}` |
-| Dictionaries and lists: API responses, parsed config | sorted, indented `.json` | `Should Match Snapshot    ${response.json()}` |
-| Rows: database query results, table contents | `.json`, one row per line | `Should Match Snapshot    ${rows}` |
-| A JSON string, in canonical form | `.json` | `Should Match Snapshot    ${body}    format=json` |
-| XML: a string with `format=xml`, or an element from the XML library | canonical, indented `.xml` | `Should Match Snapshot    ${body}    format=xml` |
-| A file the system produced | same extension | `Should Match File Snapshot    ${OUTPUT_DIR}/export.csv` |
-
-### UI state as data
-
-You can check what a page shows without comparing pixels, by snapshotting the
-data behind it. The diff then names the value that changed, and the check does
-not depend on fonts or browser rendering.
-
-```robotframework
-Sales Chart Shows Expected Data
-    ${data}=    Evaluate JavaScript    ${None}    () => window.salesChart.data
-    Should Match Snapshot    ${data}
-
-Orders Table Lists Expected Rows
-    ${cells}=    Get Table Cells As Rows    id=orders    # your own keyword
-    Should Match Snapshot    ${cells}
-```
-
-This tells you the right data is shown. It cannot tell you the page renders
-correctly; keep a few visual checks for that (see [Images, PDFs and
-screenshots](#images-pdfs-and-screenshots)).
-
-## Snapshot lifecycle
-
-| Mode | How to enable | Snapshot missing | Snapshot differs |
+| Mode | How to switch it on | Snapshot file missing | Value differs from the file |
 | --- | --- | --- | --- |
-| Default | nothing | Recorded, passes with a warning | Fails with a diff |
-| Update | `--variable REFERENCE_RUN:True` | Recorded | Overwritten, passes |
-| Strict | `--variable SNAPSHOT_STRICT:True` or `Library    SnapshotLibrary    strict=True` | Fails | Fails with a diff |
+| Default | nothing | Recorded, test passes with a warning | Test fails with a diff |
+| Update | `--variable REFERENCE_RUN:True` | Recorded | File is overwritten, test passes |
+| Strict | `--variable SNAPSHOT_STRICT:True` or `Library    SnapshotLibrary    strict=True` | Test fails | Test fails with a diff |
 
-Use strict mode in CI. Otherwise a snapshot that was never committed is
-recorded on the build machine and the test passes without checking anything.
+I recommend strict mode in CI. In default mode a snapshot you forgot to commit is simply recorded on the build machine,
+so the test passes without checking anything.
 
-When a snapshot does not match, the log shows a unified diff, and the actual
-value is saved to `${OUTPUT_DIR}/snapshot_actual/` so you can inspect it or
-copy it over.
+By default the diff only ends up in the test message and the log. When you'd also like the full actual value as a file,
+for example to open it in a diff tool, switch on `save_actual`. It is then written to
+`${OUTPUT_DIR}/snapshot_actual/<suite file name>/` whenever a snapshot does not match:
+```robotframework
+Library    SnapshotLibrary    save_actual=True
+```
+or for a single run: `--variable SNAPSHOT_SAVE_ACTUAL:True`.
 
-## Volatile values
+## What You Can Snapshot
 
-### Scrubbers
-
-A scrubber replaces volatile text with a stable placeholder before the
-comparison and before recording.
-
-| Built-in | Replaces | With |
+| Type | Stored as | Example |
 | --- | --- | --- |
-| `timestamp` | ISO-style date-times such as `2026-01-31 12:00:00.123+01:00` | `<TIMESTAMP>` |
-| `timezone` | Only the UTC offset after a date-time | `<TZ>` |
-| `uuid` | UUIDs | `<UUID>` |
-| `duration` | Values such as `1.2s`, `350 ms`, `3 seconds` | `<DURATION>` |
-| `path` | The working, temp and home directories | `<CWD>`, `<TMP>`, `<HOME>` |
+| Text | `.txt` | `Should Match Snapshot    ${result.stdout}` |
+| JSON: dictionaries and lists | `.json`, keys sorted, two-space indent | `Should Match Snapshot    ${response.json()}` |
+| JSON string | `.json`, keys sorted, two-space indent | `Should Match Snapshot    ${response.text}    format=json` |
+| Rows: database results, table contents | `.json`, one row per line | `Should Match Snapshot    ${rows}` |
+| XML string | `.xml`, attributes sorted, comments removed, two-space indent | `Should Match Snapshot    ${body}    format=xml` |
+| XML element (from the XML library) | `.xml`, same as above | `Should Match Snapshot    ${root}` |
+| File | the file's own extension | `Should Match File Snapshot    ${OUTPUT_DIR}/export.csv` |
+
+Sorting keys and attributes and fixing the indentation means the snapshot only changes when the content changes, not
+when the system happens to write the same data in another order or layout.
+
+For example, this list of rows:
+```robotframework
+${rows}=    Evaluate    [("2026-03-14", "Checkout", 12, 0), ("2026-03-15", "Checkout", 11, 1)]
+Should Match Snapshot    ${rows}
+```
+is stored as:
+```json
+[
+  ["2026-03-14", "Checkout", 12, 0],
+  ["2026-03-15", "Checkout", 11, 1]
+]
+```
+so a changed row shows up as one changed line in the diff.
+
+### Should Match Snapshot or Should Match File Snapshot?
+
+- `Should Match Snapshot` takes a **value**: the content of a variable, the return value of a keyword.
+- `Should Match File Snapshot` takes a **path to a file** the system under test created, reads that file and compares
+  its content. The snapshot keeps the file's extension, so `export.csv` is stored as a `.csv` snapshot. Add
+  `format=json` or `format=xml` to have the file sorted and indented like the table above.
+
+## How Snapshot Files Are Found
+
+There is no variable or setting that points to a snapshot file. The location follows from where the keyword is called:
+
+```
+<folder of the suite file>/__snapshots__/<suite file name>/<test name>.<extension>
+```
+
+The suite file name is used without `.robot`, and characters that are not letters, digits, `.` or `-` in the test
+name become `_`. The extension follows from the type of the value (see the table above).
+
+When a test takes more than one snapshot, the first one gets the plain test name, the next ones a number in the order
+they are taken. Give a snapshot a `name=` to get a readable file name that does not depend on the order:
 
 ```robotframework
-*** Settings ***
-Library    SnapshotLibrary    scrubbers=timestamp,uuid        # every snapshot
-
 *** Test Cases ***
-Example
-    Add Snapshot Scrubber    order_id    pattern=ORD-\\d+    scope=test
-    Should Match Snapshot    ${output}    scrubbers=duration   # this call only
+Create Order
+    Should Match Snapshot    ${response.text}                  # Create_Order.txt
+    Should Match Snapshot    ${confirmation_email}             # Create_Order__2.txt
+    Should Match Snapshot    ${response.headers}    name=headers    # Create_Order__headers.json
 ```
-
-### Ignoring fields in structured data
-
-`ignore=` masks values by JSONPath. Supported: `$.key`, `$.list[0]`,
-`$.list[*].key`, `$.*` and the recursive `$..key`. Separate several paths
-with `;`.
-
-```robotframework
-Should Match Snapshot    ${response.json()}    ignore=$.id;$..updated_at
-```
-
-## Where snapshots are stored
 
 ```
 tests/
-  orders.robot
-  __snapshots__/
-    orders/
-      Order_Has_Expected_Body.json
-      Order_Has_Expected_Body__2.json        second unnamed snapshot in the test
-      Order_Has_Expected_Body__headers.json  name=headers
+├── orders.robot
+└── __snapshots__/
+    └── orders/
+        ├── Create_Order.txt
+        ├── Create_Order__2.txt
+        └── Create_Order__headers.json
 ```
 
-When several tests should compare against the same snapshot, for example the
-short and the long form of a command-line option, give it a name and share it.
-It is then stored as `__snapshots__/<suite>/<name>.<ext>`:
+A snapshot taken in a suite setup or teardown is stored as `__suite__.<extension>`.
+
+**Several tests, one snapshot.** When several tests should compare against the same file, for example the short and
+the long form of a command line option, add `shared=True` together with a `name`. The file is then stored under that
+name alone, `__snapshots__/<suite file name>/<name>.<extension>`:
 
 ```robotframework
-Should Match Snapshot    ${result.stdout}    name=help    shared=True
+*** Test Cases ***
+Short Help Flag
+    ${result}=    Run Process    mytool    -h
+    Should Match Snapshot    ${result.stdout}    name=help    shared=True    # help.txt
+
+Long Help Flag
+    ${result}=    Run Process    mytool    --help
+    Should Match Snapshot    ${result.stdout}    name=help    shared=True    # the same help.txt
 ```
 
-Commit the `__snapshots__` directories. To keep all snapshots in one place,
-import the library with `snapshot_directory=snapshots`, or call
-`Set Snapshot Directory`.
+**All snapshots in one folder.** Import the library with `snapshot_directory=snapshots` (relative to the directory
+you run `robot` from) or call `Set Snapshot Directory`. The suite file name and test name part stays the same:
+`snapshots/<suite file name>/<test name>.<extension>`.
 
-## Unused snapshots
+## Values That Change Every Run
 
-When a test is renamed or removed, its snapshot file stays behind. At the end
-of each suite the library warns about files in that suite's snapshot directory
-that no test used:
+Timestamps, generated IDs and durations differ on every run. There are two ways to keep them out of the comparison.
 
+### Normalizers: replace changing text with a placeholder
+
+A normalizer is a regular expression that replaces matching text with a fixed placeholder, before the value is compared
+and before it is recorded. They work on every type of value.
+
+```robotframework
+*** Test Cases ***
+Order Confirmation Is Stable
+    # ${output} is: Order ORD-1042 created at 2026-03-14 09:26:53 by 3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90
+    ${output}=    Get Confirmation Message
+    Add Snapshot Normalizer    order_id    pattern=ORD-\\d+    scope=test
+    Should Match Snapshot    ${output}    normalizers=timestamp,uuid
+```
+is stored, and from then on compared, as:
+```
+Order <ORDER_ID> created at <TIMESTAMP> by <UUID>
+```
+so the next run with `ORD-1043`, another time and another UUID still passes.
+
+Built-in normalizers:
+
+| Name | Replaces | Example | Becomes |
+| --- | --- | --- | --- |
+| `timestamp` | Date and time | `2026-03-14 09:26:53.123+01:00` | `<TIMESTAMP>` |
+| `timezone` | Only the UTC offset after a date and time | `2026-03-14 09:26:53+01:00` | `2026-03-14 09:26:53<TZ>` |
+| `uuid` | UUIDs | `3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90` | `<UUID>` |
+| `duration` | Durations | `1.2s`, `350 ms`, `3 seconds` | `<DURATION>` |
+| `path` | The working, temp and home directory | `C:\Users\me\project\out` | `<CWD>\out` |
+
+You can switch them on in three places:
+
+```robotframework
+*** Settings ***
+Library    SnapshotLibrary    normalizers=timestamp,uuid    # every snapshot in the run
+
+*** Test Cases ***
+Example
+    Add Snapshot Normalizer    duration                     # every snapshot in this suite (scope=suite is the default)
+    Add Snapshot Normalizer    order_id    pattern=ORD-\\d+    scope=test    # your own, this test only
+    Should Match Snapshot    ${output}    normalizers=path  # this call only
+```
+
+A custom normalizer replaces its matches with `<NAME>` in capitals, or with your own `replacement=`, which can use
+groups from the pattern: `pattern=(localhost):\\d+    replacement=\\1:<PORT>` turns `localhost:8080` into
+`localhost:<PORT>`.
+
+### Ignore: mask fields in JSON and XML
+
+For JSON and XML you can point at the fields to leave out with `ignore=`. Their value is replaced by `<IGNORED>`:
+
+```robotframework
+# ${order} is: {"id": 1042, "status": "paid", "total": 19.95, "updated_at": "2026-03-14T09:26:53"}
+Should Match Snapshot    ${order}    ignore=$.id;$.updated_at
+```
+```json
+{
+  "id": "<IGNORED>",
+  "status": "paid",
+  "total": 19.95,
+  "updated_at": "<IGNORED>"
+}
+```
+
+```robotframework
+# ${body} is: <order status="paid" id="1042"><total>19.95</total><created>2026-03-14T09:26:53</created></order>
+Should Match Snapshot    ${body}    format=xml    ignore=.//created;@id
+```
+```xml
+<order id="&lt;IGNORED&gt;" status="paid">
+  <total>19.95</total>
+  <created>&lt;IGNORED&gt;</created>
+</order>
+```
+
+| Type | Path syntax | Examples |
+| --- | --- | --- |
+| JSON | JSONPath | `$.id`, `$.items[0]`, `$.items[*].price`, `$.*`, `$..updated_at` (any depth) |
+| XML | XPath, as supported by Python's ElementTree, relative to the root element | `.//created`, `items/item`, `.//item[@type='gift']`, `@id`, `.//item/@id` |
+
+Separate several paths with `;`. A path ending in `/@name` masks that attribute. Namespace prefixes declared in the
+document can be used in the path, for example `.//soap:Body`. Plain text has no fields, so `ignore=` does not apply to
+it; use a normalizer there.
+
+## Unused Snapshots
+
+When you rename or remove a test, its snapshot file stays behind. At the end of each suite the library warns about
+files in that suite's snapshot folder that no test used:
 ```
 [ WARN ] Unused snapshot: tests/__snapshots__/orders/Old_Test_Name.json. No test used them in this run. Delete them if they are no longer needed.
 ```
 
-A suite is only judged when every one of its tests ran and passed. A test that
-was filtered out, skipped or failed before reaching its snapshot would
-otherwise make that snapshot look unused. Turn the warning off with
+A suite is only checked when all of its tests ran and passed. Otherwise a test you filtered out with `--test`, or one
+that failed before it reached its snapshot, would make its snapshot look unused. Turn the warning off with
 `Library    SnapshotLibrary    warn_unused=False`.
 
-### Parallel runs and CI
+### Parallel Runs and CI
 
-`pabot --testlevelsplit` runs each test in its own process, so no process sees
-a whole suite and nothing is warned during the run. Check the finished run from
-the command line instead. This works for plain `robot` runs too:
+With `pabot --testlevelsplit` every test runs in its own process, so no process sees a whole suite and the warning
+never shows up. Check the finished run from the command line instead. This works for plain `robot` runs too:
 
 ```bash
-python -m SnapshotLibrary unused results/            # list, exit code 1 if any
-python -m SnapshotLibrary unused results/ --delete   # remove them
+python -m SnapshotLibrary unused results/            # list them, exit code 1 if there are any
+python -m SnapshotLibrary unused results/ --delete   # delete them
 ```
 
-The command reads the usage records the library writes to
-`<output dir>/snapshot_usage/`. It also reports snapshot directories whose
-suite file no longer exists, which is what a renamed suite leaves behind.
+The command reads the usage records the library writes to `<output dir>/snapshot_usage/`. It also reports snapshot
+folders whose suite file no longer exists, which is what renaming or deleting a suite file leaves behind.
 
-Known limits:
+Good to know:
 
-- A snapshot that is only taken under a condition (inside an `IF`, say) is
-  reported as unused in runs where the condition is false.
-- Directories left by a renamed suite are only found in the default
-  `__snapshots__` location. Under a custom `snapshot_directory` the library
-  cannot tell which suite file a directory belonged to.
-- Snapshots taken in the setup of a directory suite (`__init__.robot`) are only
-  judged when every test below that directory passed.
+- A snapshot that is only taken under a condition (inside an `IF`) is reported as unused in runs where the condition
+  is false.
+- Folders of renamed or deleted suites are only found when you use the default `__snapshots__` folders. Those sit next
+  to the suite files, so the command can see that `__snapshots__/orders/` has no `orders.robot` beside it. With
+  `snapshot_directory` all suites share one folder, possibly from several test directories, so the command cannot tell
+  which suite file a folder belonged to. Unused files inside the folders of suites that did run are still found.
+- Snapshots taken in the setup of an `__init__.robot` are only checked when every test below that folder passed.
 
 ## Keywords
 
-| Keyword | Purpose |
+| Keyword | What it does |
 | --- | --- |
-| `Should Match Snapshot` | Compare a value with its stored snapshot |
-| `Should Match File Snapshot` | Compare the text content of a file with its stored snapshot |
-| `Add Snapshot Scrubber` | Enable a built-in scrubber or register a custom one |
-| `Set Snapshot Directory` | Change where snapshots are stored |
-| `Get Snapshot` | Return a stored snapshot for custom assertions |
+| `Should Match Snapshot` | Compares a value (text, dictionary, list, XML) with its snapshot file |
+| `Should Match File Snapshot` | Reads a file from disk and compares its content with its snapshot file |
+| `Add Snapshot Normalizer` | Switches on a built-in normalizer or adds your own, for a test, a suite or the whole run |
+| `Set Snapshot Directory` | Stores snapshots in one folder of your choice instead of `__snapshots__` next to each suite |
+| `Get Snapshot` | Returns the content of a snapshot file, for your own checks |
 
-`python -m SnapshotLibrary unused <output dir>` checks a finished run for
-unused snapshots.
+All arguments and more examples are in the [Keyword Documentation](https://timdegroot1996.github.io/robotframework-snapshot/).
 
-Full keyword documentation:
-https://timdegroot1996.github.io/robotframework-snapshot/
+## Images, PDFs and Screenshots
 
-Or generate it locally with:
+This library compares text and data only, and that will stay so. For images, PDFs, print jobs and screenshots use
+[DocTestLibrary](https://github.com/manykarim/robotframework-doctestlibrary).
 
-```bash
-libdoc SnapshotLibrary docs/SnapshotLibrary.html
-```
-
-## Images, PDFs and screenshots
-
-This library does not compare visual content, and it will not. Use
-[DocTestLibrary](https://github.com/manykarim/robotframework-doctestlibrary)
-for images, PDFs, print jobs and web page screenshots.
-
-The two work well side by side. Both read the same `REFERENCE_RUN` variable,
-so one command refreshes text snapshots and visual baselines together:
+The two work well side by side. Both read the same `REFERENCE_RUN` variable, so one run updates text snapshots and
+visual baselines together:
 
 ```robotframework
 *** Settings ***
@@ -215,8 +319,8 @@ Library    DocTest.WebVisualTest
 *** Test Cases ***
 Checkout Page
     New Page    https://shop.example.com/checkout
-    ${prices}=    Evaluate JavaScript    ${None}    () => window.cart.items
-    Should Match Snapshot          ${prices}        # the data is right
+    ${items}=    Evaluate JavaScript    ${None}    () => window.cart.items
+    Should Match Snapshot          ${items}         # the data is right
     Compare Page To Baseline       checkout         # the page looks right
 ```
 
@@ -224,17 +328,19 @@ Checkout Page
 robot --variable REFERENCE_RUN:True tests/
 ```
 
-`Compare Page To Baseline` is part of `DocTest.WebVisualTest`; check the
-DocTestLibrary documentation for the version that includes it.
+`Compare Page To Baseline` is part of `DocTest.WebVisualTest`; check the DocTestLibrary documentation for the version
+that includes it.
 
-## Acknowledgement
+The way this library records on the first run and updates with `REFERENCE_RUN` follows DocTestLibrary by Many
+Kasiriha, so that people using both get the same experience.
 
-The record-on-first-run lifecycle and the `REFERENCE_RUN` switch follow the
-usage format of [DocTestLibrary](https://github.com/manykarim/robotframework-doctestlibrary)
-by Many Kasiriha, which does for visual content what this library does for
-text and data. The idea of snapshot testing itself comes from tools such as
-Jest, syrupy and ApprovalTests.
+## Contributions
+
+Contributions are welcome! If you run into an issue, have an idea for an improvement or would like to add something
+yourself, feel free to open an issue or a pull request. How to set up the project and run the tests is described in
+[Contributing](./CONTRIBUTING.md).
 
 ## License
+This project is licensed under the MIT License.
 
-MIT
+> **Note:** This project is not officially affiliated with or endorsed by Robot Framework.

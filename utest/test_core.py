@@ -1,6 +1,6 @@
 import pytest
 
-from SnapshotLibrary import core, scrubbers, store
+from SnapshotLibrary import core, normalizers, store
 from SnapshotLibrary.core import Outcome
 
 
@@ -52,9 +52,9 @@ def test_snapshot_with_windows_line_endings_still_matches(tmp_path):
     assert core.check(path, "a\nb\n").outcome is Outcome.MATCHED
 
 
-def test_prepare_masks_then_scrubs():
+def test_prepare_masks_then_normalizes():
     value = {"id": 7, "at": "2026-01-02 03:04:05", "name": "x"}
-    text, ext = core.prepare(value, ignore="$.id", scrubbers=[scrubbers.builtin("timestamp")])
+    text, ext = core.prepare(value, ignore="$.id", normalizers=[normalizers.builtin("timestamp")])
     assert ext == "json"
     assert '"id": "<IGNORED>"' in text and '"at": "<TIMESTAMP>"' in text
 
@@ -66,7 +66,7 @@ def test_prepare_does_not_modify_the_callers_value():
 
 
 def test_ignore_on_plain_text_explains_what_to_do():
-    with pytest.raises(ValueError, match="format=json"):
+    with pytest.raises(ValueError, match="normalizer"):
         core.prepare("plain", ignore="$.id")
 
 

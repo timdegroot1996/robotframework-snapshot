@@ -11,7 +11,7 @@ from robot.api.deco import keyword, library
 from robot.libraries.BuiltIn import BuiltIn
 from robot.utils import is_truthy
 
-from . import core, scrubbers as scrubbing, serializers, store, unused as usage_tracking
+from . import core, normalizers as normalizing, serializers, store, unused as usage_tracking
 from .core import Outcome
 from .version import __version__
 
@@ -22,50 +22,67 @@ SCOPES = ("test", "suite", "global")
 
 @library(scope="GLOBAL", version=__version__, doc_format="ROBOT")
 class SnapshotLibrary:
-    """Snapshot testing for text and structured data.
+    """Checks text and data against a stored expected value, without writing that value by hand.
 
-    The first run records the actual value to a file. Later runs compare
-    against it. You review expected values as file diffs in version control
-    instead of writing them by hand.
+    The first time a test runs, the value is saved to a file next to the
+    suite. Every run after that compares against the file and fails with a
+    diff when something changed.
 
     | *** Settings ***
+    | Library    Process
     | Library    SnapshotLibrary
     |
     | *** Test Cases ***
     | Help Text Is Stable
     |     ${result}=    Run Process    mytool    --help
     |     Should Match Snapshot    ${result.stdout}
-    |
-    | Order Has Expected Body
-    |     ${response}=    GET    ${URL}/orders/42
-    |     Should Match Snapshot    ${response.json()}    ignore=$.updated_at
 
-    = Snapshot lifecycle =
+    The first run writes ``__snapshots__/<suite file name>/Help_Text_Is_Stable.txt``
+    and passes with a warning. Check the file and commit it with your tests.
+    From then on the test fails when the output changes, and the failure
+    message shows a diff. When the change is intended, run once with
+    ``--variable REFERENCE_RUN:True`` to overwrite the snapshot.
 
-    | =Mode=  | =How to enable=                      | =Snapshot missing=             | =Snapshot differs=   |
-    | Default | nothing                              | Recorded, passes with a warning | Fails with a diff    |
-    | Update  | ``--variable REFERENCE_RUN:True``    | Recorded                       | Overwritten, passes  |
-    | Strict  | ``--variable SNAPSHOT_STRICT:True`` or ``strict=True`` | Fails          | Fails with a diff    |
+    = Modes =
+
+    | =Mode=  | =How to switch it on= | =Snapshot file missing= | =Value differs from the file= |
+    | Default | nothing | Recorded, test passes with a warning | Test fails with a diff |
+    | Update  | ``--variable REFERENCE_RUN:True`` | Recorded | File is overwritten, test passes |
+    | Strict  | ``--variable SNAPSHOT_STRICT:True`` or ``strict=True`` | Test fails | Test fails with a diff |
 
     Use strict mode in CI, so a snapshot that was never committed fails the
     build instead of being recorded on the build machine.
 
-    = Where snapshots are stored =
+    The diff is shown in the failure message and the log. With
+    ``save_actual=True`` or ``--variable SNAPSHOT_SAVE_ACTUAL:True`` the full
+    actual value is also written to ``${OUTPUT_DIR}/snapshot_actual/``.
 
-    Snapshots are plain files meant to be committed:
-    ``__snapshots__/<suite file name>/<test name>.<ext>`` next to the suite
-    file. Text is stored as ``.txt``, dictionaries and lists as sorted,
-    indented ``.json``, XML as canonical, indented ``.xml``. A second snapshot in the same test gets the suffix
-    ``__2``, or ``__<name>`` when ``name=`` is given. With ``shared=True``
-    the file is ``<name>.<ext>`` without the test name, so several tests can
-    compare against one snapshot. A list of rows is written one row per line.
+    = How snapshot files are found =
 
-    = Volatile values =
+    The location follows from where the keyword is called, there is no
+    setting per file:
+    ``<folder of the suite file>/__snapshots__/<suite file name>/<test name>.<extension>``.
 
-    Scrubbers replace volatile text with placeholders before comparing and
-    before recording. Built in: ``timestamp``, ``timezone``, ``uuid``,
-    ``duration`` and ``path``. Add your own with `Add Snapshot Scrubber`.
-    For structured data, ``ignore=`` masks values by JSONPath.
+    - Text is stored as ``.txt``, dictionaries and lists as ``.json`` with
+      sorted keys, XML as ``.xml`` with sorted attributes. A list of rows is
+      written one row per line.
+    - A second snapshot in the same test gets the suffix ``__2``, a third
+      ``__3``, or ``__<name>`` when ``name=`` is given.
+    - With ``shared=True`` the file is ``<name>.<extension>`` without the test
+      name, so several tests compare against one file.
+    - A snapshot taken in a suite setup or teardown is stored as ``__suite__``.
+    - ``snapshot_directory`` on import, or `Set Snapshot Directory`, puts all
+      suite folders in one directory instead.
+
+    = Values that change every run =
+
+    Normalizers replace changing text with a placeholder before comparing and
+    before recording, for example ``2026-03-14 09:26:53`` with
+    ``<TIMESTAMP>``. Built in: ``timestamp``, ``timezone``, ``uuid``,
+    ``duration`` and ``path``. Add your own with `Add Snapshot Normalizer`.
+
+    For JSON, ``ignore=`` masks fields by JSONPath (``$.id``,
+    ``$..updated_at``), and for XML by XPath (``.//created``, ``@id``).
 
     = Unused snapshots =
 
@@ -89,9 +106,8 @@ class SnapshotLibrary:
 
     This library does not compare visual content. Use
     [https://github.com/manykarim/robotframework-doctestlibrary|DocTestLibrary]
-    for that. Its baseline lifecycle inspired this library, and both use the
-    same ``REFERENCE_RUN`` variable, so one command updates snapshots and
-    visual baselines together.
+    for that. Both libraries read the same ``REFERENCE_RUN`` variable, so one
+    run updates text snapshots and visual baselines together.
     """
 
     ROBOT_LISTENER_API_VERSION = 3
@@ -99,32 +115,35 @@ class SnapshotLibrary:
     def __init__(
         self,
         snapshot_directory: Optional[str] = None,
-        scrubbers: Optional[Union[str, List[str]]] = None,
+        normalizers: Optional[Union[str, List[str]]] = None,
         strict: bool = False,
         warn_unused: bool = True,
+        save_actual: bool = False,
     ):
         """
         | =Argument= | =Description= |
         | ``snapshot_directory`` | Directory for all snapshots. Relative paths resolve against ``${EXECDIR}``. Default: ``__snapshots__`` next to each suite file. |
-        | ``scrubbers`` | Built-in scrubbers applied to every snapshot, comma separated, for example ``timestamp,uuid``. |
+        | ``normalizers`` | Built-in normalizers applied to every snapshot, comma separated, for example ``timestamp,uuid``. |
         | ``strict`` | Fail when a snapshot is missing instead of recording it. Can also be set per run with ``--variable SNAPSHOT_STRICT:True``. |
         | ``warn_unused`` | Warn at the end of a suite about snapshot files no test used. See `Unused snapshots`. |
+        | ``save_actual`` | When a snapshot does not match, also write the actual value to ``${OUTPUT_DIR}/snapshot_actual/``. Can also be set per run with ``--variable SNAPSHOT_SAVE_ACTUAL:True``. |
         """
         # The library is its own listener (API v3), to know when tests and suites start and end.
         self.ROBOT_LIBRARY_LISTENER = self
         self.snapshot_directory = snapshot_directory
         self.strict = is_truthy(strict)
         self.warn_unused = is_truthy(warn_unused)
+        self.save_actual = is_truthy(save_actual)
         self._usage: List[usage_tracking.SuiteUsage] = []
-        self._global_scrubbers = [scrubbing.builtin(name) for name in scrubbing.split_names(scrubbers)]
-        self._suite_scrubbers: List[List[scrubbing.Scrubber]] = []
-        self._test_scrubbers: List[scrubbing.Scrubber] = []
+        self._global_normalizers = [normalizing.builtin(name) for name in normalizing.split_names(normalizers)]
+        self._suite_normalizers: List[List[normalizing.Normalizer]] = []
+        self._test_normalizers: List[normalizing.Normalizer] = []
         self._unnamed_count = 0
 
     # -- listener: scopes and per-test numbering ---------------------------
 
     def _start_suite(self, data, result):
-        self._suite_scrubbers.append([])
+        self._suite_normalizers.append([])
         self._unnamed_count = 0
         if data.parent is None:
             output_dir = self._variable("${OUTPUT DIR}")
@@ -133,17 +152,17 @@ class SnapshotLibrary:
         self._usage.append(usage_tracking.SuiteUsage(str(data.source or ""), self._count_tests(data.source)))
 
     def _end_suite(self, data, result):
-        if self._suite_scrubbers:
-            self._suite_scrubbers.pop()
+        if self._suite_normalizers:
+            self._suite_normalizers.pop()
         if self._usage:
             self._close_usage(self._usage.pop(), data, result)
 
     def _start_test(self, data, result):
-        self._test_scrubbers = []
+        self._test_normalizers = []
         self._unnamed_count = 0
 
     def _end_test(self, data, result):
-        self._test_scrubbers = []
+        self._test_normalizers = []
         self._unnamed_count = 0
         if self._usage:
             self._usage[-1].ran[result.name] = result.status
@@ -215,33 +234,33 @@ class SnapshotLibrary:
         value: Any,
         name: Optional[str] = None,
         ignore: Optional[Union[str, List[str]]] = None,
-        scrubbers: Optional[Union[str, List[str]]] = None,
+        normalizers: Optional[Union[str, List[str]]] = None,
         format: str = "auto",
         shared: bool = False,
     ):
         """Compares ``value`` with its stored snapshot.
 
         If the snapshot does not exist yet it is recorded and the keyword
-        passes with a warning. See `Snapshot lifecycle` for update and strict
+        passes with a warning. See `Modes` for update and strict
         mode.
 
         | =Argument= | =Description= |
         | ``value`` | A string, or anything that can be written as JSON: dictionary, list, number, boolean. |
         | ``name`` | Name for this snapshot. Needed only to give several snapshots in one test readable file names. |
-        | ``ignore`` | JSONPath of values to mask in structured data, for example ``$.id`` or ``$..updated_at``. Several paths: separate with ``;`` or pass a list. |
-        | ``scrubbers`` | Extra scrubbers for this call only, comma separated. |
-        | ``format`` | ``auto`` (default), ``text``, ``json`` or ``xml``. Use ``json`` or ``xml`` to store a JSON or XML string in canonical form. XML elements, for example from the XML library, are detected automatically. |
+        | ``ignore`` | Values to mask. JSONPath for structured data, for example ``$.id`` or ``$..updated_at``. XPath for XML, for example ``.//timestamp`` or ``.//order/@id``. Several paths: separate with ``;`` or pass a list. |
+        | ``normalizers`` | Extra normalizers for this call only, comma separated. |
+        | ``format`` | ``auto`` (default), ``text``, ``json`` or ``xml``. Use ``json`` or ``xml`` to store a JSON or XML string sorted and indented, so key order, attribute order and layout do not matter. XML elements, for example from the XML library, are detected automatically. |
         | ``shared`` | Store the snapshot under ``name`` alone, without the test name, so several tests in the suite compare against the same file. Needs ``name``. |
 
         Examples:
         | `Should Match Snapshot`    ${output}
-        | `Should Match Snapshot`    ${rows}    name=runs    scrubbers=timezone
+        | `Should Match Snapshot`    ${rows}    name=runs    normalizers=timezone
         | `Should Match Snapshot`    ${response.json()}    ignore=$.id;$..updated_at
         | `Should Match Snapshot`    ${response.text}    format=json
         | `Should Match Snapshot`    ${soap_body}    format=xml
         | `Should Match Snapshot`    ${help_text}    name=help    shared=True
         """
-        text, extension = core.prepare(value, format, ignore, self._active_scrubbers(scrubbers))
+        text, extension = core.prepare(value, format, ignore, self._active_normalizers(normalizers))
         self._assert(text, extension, name, shared)
 
     @keyword
@@ -249,7 +268,7 @@ class SnapshotLibrary:
         self,
         path: str,
         name: Optional[str] = None,
-        scrubbers: Optional[Union[str, List[str]]] = None,
+        normalizers: Optional[Union[str, List[str]]] = None,
         encoding: str = "UTF-8",
         shared: bool = False,
         format: str = "text",
@@ -260,12 +279,12 @@ class SnapshotLibrary:
         generated configuration. The snapshot keeps the file's extension.
 
         By default the content is compared as text. With ``format=json`` or
-        ``format=xml`` it is stored in canonical form, so key order, attribute
+        ``format=xml`` it is stored sorted and indented, so key order, attribute
         order and indentation do not matter.
 
         Examples:
         | `Should Match File Snapshot`    ${OUTPUT_DIR}/export.csv
-        | `Should Match File Snapshot`    ${TEMPDIR}/report.html    scrubbers=timestamp
+        | `Should Match File Snapshot`    ${TEMPDIR}/report.html    normalizers=timestamp
         | `Should Match File Snapshot`    ${OUTPUT_DIR}/config.xml    format=xml
         """
         source = Path(path)
@@ -275,51 +294,51 @@ class SnapshotLibrary:
             content = file.read()
         if (format or "text").lower() == "auto":
             raise ValueError("format=auto is not supported for files. Use text, json or xml.")
-        text, _ = core.prepare(content, format, None, self._active_scrubbers(scrubbers))
+        text, _ = core.prepare(content, format, None, self._active_normalizers(normalizers))
         extension = source.suffix.lstrip(".") or serializers.TEXT
         self._assert(text, extension, name, shared)
 
     @keyword
-    def add_snapshot_scrubber(
+    def add_snapshot_normalizer(
         self,
         name: str,
         pattern: Optional[str] = None,
         replacement: Optional[str] = None,
         scope: str = "suite",
     ):
-        """Adds a scrubber that replaces volatile text before comparing and recording.
+        """Adds a normalizer that replaces changing text, such as timestamps or IDs, with a placeholder before comparing and recording.
 
-        With only ``name`` a built-in scrubber is enabled: ``timestamp``,
+        With only ``name`` a built-in normalizer is enabled: ``timestamp``,
         ``timezone``, ``uuid``, ``duration`` or ``path``. With ``pattern`` a
         custom one is registered; ``replacement`` defaults to ``<NAME>`` and
         may use regular expression groups such as ``\\\\1``.
 
         ``scope`` is ``test``, ``suite`` (default) or ``global``. A test-scoped
-        scrubber is dropped when the test ends, a suite-scoped one when the
+        normalizer is dropped when the test ends, a suite-scoped one when the
         suite ends.
 
         Examples:
-        | `Add Snapshot Scrubber`    timestamp
-        | `Add Snapshot Scrubber`    order_id    pattern=ORD-\\\\d+    scope=test
-        | `Add Snapshot Scrubber`    port    pattern=(localhost):\\\\d+    replacement=\\\\1:<PORT>
+        | `Add Snapshot Normalizer`    timestamp
+        | `Add Snapshot Normalizer`    order_id    pattern=ORD-\\\\d+    scope=test
+        | `Add Snapshot Normalizer`    port    pattern=(localhost):\\\\d+    replacement=\\\\1:<PORT>
         """
         scope = scope.strip().lower()
         if scope not in SCOPES:
             raise ValueError(f"Unknown scope '{scope}'. Use one of: {', '.join(SCOPES)}.")
         if pattern is None:
-            scrubber = scrubbing.builtin(name)
+            normalizer = normalizing.builtin(name)
         else:
             if replacement is None:
                 replacement = f"<{name.upper()}>"
-            scrubber = scrubbing.regex_scrubber(name, pattern, replacement)
+            normalizer = normalizing.regex_normalizer(name, pattern, replacement)
         if scope == "global":
-            self._global_scrubbers.append(scrubber)
+            self._global_normalizers.append(normalizer)
         elif scope == "test" and self._in_test():
-            self._test_scrubbers.append(scrubber)
+            self._test_normalizers.append(normalizer)
         else:
-            if not self._suite_scrubbers:
-                self._suite_scrubbers.append([])
-            self._suite_scrubbers[-1].append(scrubber)
+            if not self._suite_normalizers:
+                self._suite_normalizers.append([])
+            self._suite_normalizers[-1].append(normalizer)
 
     @keyword
     def set_snapshot_directory(self, snapshot_directory: Optional[str] = None) -> Optional[str]:
@@ -389,7 +408,9 @@ class SnapshotLibrary:
                 "Record it locally (run without strict mode) and commit the file."
             )
         else:
-            actual_path = self._save_actual(path, text)
+            actual_path = None
+            if self.save_actual or is_truthy(self._variable("${SNAPSHOT_SAVE_ACTUAL}", False)):
+                actual_path = self._save_actual(path, text)
             self._log_diff(result.diff)
             if actual_path:
                 logger.info(f"Actual value saved to '{actual_path}'.")
@@ -402,14 +423,14 @@ class SnapshotLibrary:
                 + "\n\nIf the change is intended, update the snapshot with: --variable REFERENCE_RUN:True"
             )
 
-    def _active_scrubbers(self, extra) -> List[scrubbing.Scrubber]:
-        active = list(self._global_scrubbers)
-        for suite_level in self._suite_scrubbers:
+    def _active_normalizers(self, extra) -> List[normalizing.Normalizer]:
+        active = list(self._global_normalizers)
+        for suite_level in self._suite_normalizers:
             active.extend(suite_level)
-        active.extend(self._test_scrubbers)
-        known = {scrubber.name: scrubber for scrubber in active}
-        for name in scrubbing.split_names(extra):
-            active.append(known.get(name) or scrubbing.builtin(name))
+        active.extend(self._test_normalizers)
+        known = {normalizer.name: normalizer for normalizer in active}
+        for name in normalizing.split_names(extra):
+            active.append(known.get(name) or normalizing.builtin(name))
         return active
 
     def _variable(self, name: str, default=None):
