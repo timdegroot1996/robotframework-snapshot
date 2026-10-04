@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.11", "3.13"]
+        robotframework: ["6.1.1", "7.0.1", ""]
+        include:
+          - os: windows-latest
+            python: "3.13"
+            robotframework: ""
+          - os: macos-latest
+            python: "3.13"
+            robotframework: ""
+        exclude:
+          # Robot Framework 6.1 and 7.0 predate Python 3.13
+          - python: "3.13"
+            robotframework: "6.1.1"
+          - python: "3.13"
+            robotframework: "7.0.1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -n "${{ matrix.robotframework }}" ]; then pip install "robotframework==${{ matrix.robotframework }}"; fi
+          pip install -e ".[dev]"
+      - name: Unit tests
+        run: python -m pytest utest -q
+      - name: Acceptance tests
+        run: python -m pytest atest -q
+      - name: Keyword documentation builds
+        run: python -m robot.libdoc SnapshotLibrary docs/SnapshotLibrary.html

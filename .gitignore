@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.venv/
+output.xml
+log.html
+report.html
+snapshot_actual/
+docs/SnapshotLibrary.html
