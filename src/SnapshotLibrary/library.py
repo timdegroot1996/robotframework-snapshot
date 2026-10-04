@@ -399,7 +399,7 @@ class SnapshotLibrary:
             else:
                 logger.warn(message)
         elif result.outcome is Outcome.UPDATED:
-            self._log_diff(core.unified_diff(result.expected, result.actual), "Changes written to the snapshot:")
+            self._log_diff(core.unified_diff(result.expected, result.actual), "Changes written to the snapshot", opened=True)
             logger.info(f"Reference run: snapshot '{label}' was updated.")
         elif result.outcome is Outcome.MISSING:
             raise AssertionError(
@@ -414,9 +414,12 @@ class SnapshotLibrary:
                 logger.info(f"Actual value saved to '{actual_path}'.")
             message, omitted = core.mismatch_message(label, result.diff, self._max_message_lines())
             if omitted:
-                # Only then does the log add something; Robot Framework shows the message itself anyway.
                 shown = len(result.diff) - omitted
-                self._log_diff(result.diff, f"Full diff. The failure message shows the first {shown} of {len(result.diff)} lines:")
+                title = f"Full diff in colour. The failure message shows the first {shown} of {len(result.diff)} lines"
+                self._log_diff(result.diff, title, opened=True)
+            else:
+                # Robot Framework already shows the whole diff in the message, so keep this one closed.
+                self._log_diff(result.diff, "Diff in colour", opened=False)
             raise AssertionError(message)
 
     def _active_normalizers(self, extra) -> List[normalizing.Normalizer]:
@@ -491,7 +494,8 @@ class SnapshotLibrary:
         return target
 
     @staticmethod
-    def _log_diff(diff: List[str], title: str):
+    def _log_diff(diff: List[str], title: str, opened: bool):
+        """Logs the diff with removed lines red and added lines green, in a block that can be folded."""
         if not diff:
             return
         styles = {"+": "color:#1a7f37", "-": "color:#cf222e", "@": "color:#6e7781"}
@@ -500,9 +504,9 @@ class SnapshotLibrary:
             style = styles.get(line[:1], "")
             escaped = html.escape(line)
             lines.append(f'<span style="{style}">{escaped}</span>' if style else escaped)
-        # The whole diff, in a box that scrolls once it is long, so a big diff does not flood the log.
+        # A box that scrolls once it is long, so a big diff does not flood the log.
         logger.info(
-            f"<b>{html.escape(title)}</b>"
-            '<pre style="margin:4px 0 0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre>",
+            f"<details{' open' if opened else ''}><summary><b>{html.escape(title)}</b></summary>"
+            '<pre style="margin:4px 0 0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre></details>",
             html=True,
         )

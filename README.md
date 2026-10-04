@@ -64,7 +64,7 @@ Open the file, check that the content is what you expect, and commit it together
 message shows exactly what changed, in the console, `log.html` and `report.html`:
 ```
 Snapshot 'tests/__snapshots__/cli/Help_Text_Is_Stable.txt' does not match.
---- snapshot: tests/__snapshots__/cli/Help_Text_Is_Stable.txt
+--- snapshot
 +++ actual
 @@ -3,3 +3,3 @@
  Options:
@@ -89,9 +89,10 @@ overwritten with the new value and the tests pass. Review the changed files like
 I recommend strict mode in CI. In default mode a snapshot you forgot to commit is simply recorded on the build machine,
 so the test passes without checking anything.
 
-The log always shows the full diff. The failure message shows as much of it as fits within Robot Framework's
-`--maxerrorlines` (40 lines by default), starting at the top, and says how many lines were left out. Run with
-`--maxerrorlines NONE` to get the whole diff in the message as well.
+The failure message shows as much of the diff as fits within Robot Framework's `--maxerrorlines` (40 lines by
+default), starting at the top, and says how many lines were left out. Run with `--maxerrorlines NONE` to get the whole
+diff in the message. The log also has the full diff in colour, removed lines red and added lines green: folded away
+when the message already shows everything, open when the message had to leave lines out.
 
 By default the diff only ends up in the test message and the log. When you'd also like the full actual value as a file,
 for example to open it in a diff tool, switch on `save_actual`. It is then written to
@@ -129,6 +130,36 @@ is stored as:
 ]
 ```
 so a changed row shows up as one changed line in the diff.
+
+The same goes for JSON and XML: because of the fixed layout, a changed value is one changed line. When the stored order
+says `"status": "paid"` and the API now returns `refunded`:
+```
+Snapshot 'tests/__snapshots__/orders/Order_Has_Expected_Body.json' does not match.
+--- snapshot
++++ actual
+@@ -1,5 +1,5 @@
+ {
+   "id": 1042,
+-  "status": "paid",
++  "status": "refunded",
+   "total": 19.95
+ }
+
+If the change is intended, update the snapshot with: --variable REFERENCE_RUN:True
+```
+and when an XML total changed from `19.95` to `24.95`:
+```
+Snapshot 'tests/__snapshots__/orders/Order_Xml.xml' does not match.
+--- snapshot
++++ actual
+@@ -1,3 +1,3 @@
+ <order id="1042">
+-  <total>19.95</total>
++  <total>24.95</total>
+ </order>
+
+If the change is intended, update the snapshot with: --variable REFERENCE_RUN:True
+```
 
 ### Should Match Snapshot or Should Match File Snapshot?
 
