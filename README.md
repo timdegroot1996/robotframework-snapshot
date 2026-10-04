@@ -10,6 +10,24 @@ library saves the value to a file next to your suite. Every run after that compa
 diff when something changed. It works well for command line output, API responses, database rows, XML and generated
 files: anything where the expected value is long, tedious to type out and changes now and then on purpose.
 
+## Contents
+
+- [Installation](#installation)
+- [Getting Started](#getting-started)
+- [Modes](#modes)
+- [What You Can Snapshot](#what-you-can-snapshot)
+  - [Should Match Snapshot or Should Match File Snapshot?](#should-match-snapshot-or-should-match-file-snapshot)
+- [How Snapshot Files Are Found](#how-snapshot-files-are-found)
+- [Values That Change Every Run: Normalizers and Ignore](#values-that-change-every-run-normalizers-and-ignore)
+  - [Normalizers: replace changing text with a placeholder](#normalizers-replace-changing-text-with-a-placeholder)
+  - [Ignore: mask fields in JSON and XML](#ignore-mask-fields-in-json-and-xml)
+- [Unused Snapshots](#unused-snapshots)
+  - [Parallel Runs and CI](#parallel-runs-and-ci)
+- [Keywords](#keywords)
+- [Images, PDFs and Screenshots](#images-pdfs-and-screenshots)
+- [Contributions](#contributions)
+- [License](#license)
+
 ## Installation
 
 Install Robot Framework 6.1 or higher (if not already installed):
@@ -168,9 +186,10 @@ Long Help Flag
 you run `robot` from) or call `Set Snapshot Directory`. The suite file name and test name part stays the same:
 `snapshots/<suite file name>/<test name>.<extension>`.
 
-## Values That Change Every Run
+## Values That Change Every Run: Normalizers and Ignore
 
-Timestamps, generated IDs and durations differ on every run. There are two ways to keep them out of the comparison.
+Timestamps, generated IDs and durations differ on every run. There are two ways to keep them out of the comparison:
+normalizers for any value, and `ignore=` for fields in JSON and XML.
 
 ### Normalizers: replace changing text with a placeholder
 
@@ -201,18 +220,25 @@ Built-in normalizers:
 | `duration` | Durations | `1.2s`, `350 ms`, `3 seconds` | `<DURATION>` |
 | `path` | The working, temp and home directory | `C:\Users\me\project\out` | `<CWD>\out` |
 
-You can switch them on in three places:
+You can switch normalizers on for the whole run, a suite, a test or a single call:
 
 ```robotframework
 *** Settings ***
-Library    SnapshotLibrary    normalizers=timestamp,uuid    # every snapshot in the run
+Library    SnapshotLibrary    normalizers=uuid    # every snapshot in the run
 
 *** Test Cases ***
-Example
-    Add Snapshot Normalizer    duration                     # every snapshot in this suite (scope=suite is the default)
-    Add Snapshot Normalizer    order_id    pattern=ORD-\\d+    scope=test    # your own, this test only
-    Should Match Snapshot    ${output}    normalizers=path  # this call only
+Import Job Summary
+    Add Snapshot Normalizer    timestamp    # every snapshot in this suite (scope=suite is the default)
+    Add Snapshot Normalizer    job_id    pattern=JOB-\\d+    scope=test    # your own, this test only
+    # ${summary} is: JOB-77 by 3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90 started 2026-03-14 09:26:53, took 1.2s
+    ${summary}=    Get Job Summary
+    Should Match Snapshot    ${summary}    normalizers=duration    # this call only
 ```
+is stored as:
+```
+<JOB_ID> by <UUID> started <TIMESTAMP>, took <DURATION>
+```
+`Add Snapshot Normalizer` also takes `scope=global`, which keeps the normalizer for the rest of the run.
 
 A custom normalizer replaces its matches with `<NAME>` in capitals, or with your own `replacement=`, which can use
 groups from the pattern: `pattern=(localhost):\\d+    replacement=\\1:<PORT>` turns `localhost:8080` into
