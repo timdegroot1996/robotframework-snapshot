@@ -17,6 +17,12 @@ from .version import __version__
 
 ACTUAL_DIR_NAME = "snapshot_actual"
 SCOPES = ("test", "suite", "global")
+# The clickable line above a folded diff, styled as a button that works on the light and the dark log theme.
+SUMMARY_STYLE = (
+    "display:list-item; list-style-position:inside; width:fit-content; cursor:pointer; "
+    "padding:3px 10px; border:1px solid #8c959f; border-radius:6px; "
+    "background:rgba(140,149,159,0.15); font-weight:bold"
+)
 
 
 @library(scope="GLOBAL", version=__version__, doc_format="ROBOT")
@@ -419,7 +425,7 @@ class SnapshotLibrary:
                 self._log_diff(result.diff, title, opened=True)
             else:
                 # Robot Framework already shows the whole diff in the message, so keep this one closed.
-                self._log_diff(result.diff, "Diff in colour", opened=False)
+                self._log_diff(result.diff, f"Show diff in colour ({len(result.diff)} lines)", opened=False)
             raise AssertionError(message)
 
     def _active_normalizers(self, extra) -> List[normalizing.Normalizer]:
@@ -506,7 +512,7 @@ class SnapshotLibrary:
             lines.append(f'<span style="{style}">{escaped}</span>' if style else escaped)
         # A box that scrolls once it is long, so a big diff does not flood the log.
         logger.info(
-            f"<details{' open' if opened else ''}><summary><b>{html.escape(title)}</b></summary>"
+            f"<details{' open' if opened else ''}><summary style=\"{SUMMARY_STYLE}\">{html.escape(title)}</summary>"
             '<pre style="margin:4px 0 0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre></details>",
             html=True,
         )
