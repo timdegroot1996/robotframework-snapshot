@@ -7,7 +7,7 @@ import difflib
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable, List, Optional, Tuple
 
 from . import jsonpath, serializers, store, xmlpath
 from .normalizers import Normalizer, apply_all
@@ -87,8 +87,8 @@ def _omitted_note(count: int) -> str:
     )
 
 
-def mismatch_message(label: str, diff: List[str], max_lines: Optional[int] = None) -> str:
-    """The failure message for a snapshot that does not match.
+def mismatch_message(label: str, diff: List[str], max_lines: Optional[int] = None) -> Tuple[str, int]:
+    """The failure message for a snapshot that does not match, and how many diff lines it leaves out.
 
     Robot Framework removes the middle of a failure message that is longer
     than ``max_lines`` (its ``--maxerrorlines``, ``None`` for no limit). To
@@ -99,29 +99,31 @@ def mismatch_message(label: str, diff: List[str], max_lines: Optional[int] = Non
     header = [f"Snapshot '{label}' does not match."]
     footer = ["", UPDATE_HINT]
     if max_lines is None or _message_lines(header + diff + footer) <= max_lines:
-        return "\n".join(header + diff + footer)
+        return "\n".join(header + diff + footer), 0
     budget = max_lines - _message_lines(header + footer + [_omitted_note(len(diff))])
     shown: List[str] = []
     for line in diff:
         if _message_lines(shown + [line]) > budget:
             break
         shown.append(line)
-    return "\n".join(header + shown + [_omitted_note(len(diff) - len(shown))] + footer)
+    omitted = len(diff) - len(shown)
+    return "\n".join(header + shown + [_omitted_note(omitted)] + footer), omitted
 
 
-def unified_diff(expected: str, actual: str, label: str) -> List[str]:
+def unified_diff(expected: str, actual: str) -> List[str]:
+    # No path in the header: every message that shows a diff already names the snapshot.
     return list(
         difflib.unified_diff(
             expected.splitlines(),
             actual.splitlines(),
-            fromfile=f"snapshot: {label}",
+            fromfile="snapshot",
             tofile="actual",
             lineterm="",
         )
     )
 
 
-def check(path: Path, actual: str, update: bool = False, strict: bool = False, label: str = "") -> Result:
+def check(path: Path, actual: str, update: bool = False, strict: bool = False) -> Result:
     """Compare ``actual`` with the snapshot at ``path`` and record or update as the mode allows.
 
     | Mode    | Snapshot missing | Snapshot differs |
@@ -143,5 +145,5 @@ def check(path: Path, actual: str, update: bool = False, strict: bool = False, l
     if update:
         store.write(path, actual)
         return Result(Outcome.UPDATED, path, actual, expected)
-    diff = unified_diff(expected, actual, label or path.name)
+    diff = unified_diff(expected, actual)
     return Result(Outcome.MISMATCH, path, actual, expected, diff)

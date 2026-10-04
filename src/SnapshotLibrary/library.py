@@ -388,7 +388,7 @@ class SnapshotLibrary:
         label = self._label(path)
         update = is_truthy(self._variable("${REFERENCE_RUN}", False))
         strict = self.strict or is_truthy(self._variable("${SNAPSHOT_STRICT}", False))
-        result = core.check(path, text, update=update, strict=strict, label=label)
+        result = core.check(path, text, update=update, strict=strict)
 
         if result.outcome is Outcome.MATCHED:
             logger.info(f"Snapshot '{label}' matches.")
@@ -399,7 +399,7 @@ class SnapshotLibrary:
             else:
                 logger.warn(message)
         elif result.outcome is Outcome.UPDATED:
-            self._log_diff(core.unified_diff(result.expected, result.actual, label))
+            self._log_diff(core.unified_diff(result.expected, result.actual), "Changes written to the snapshot:")
             logger.info(f"Reference run: snapshot '{label}' was updated.")
         elif result.outcome is Outcome.MISSING:
             raise AssertionError(
@@ -410,10 +410,14 @@ class SnapshotLibrary:
             actual_path = None
             if self.save_actual or is_truthy(self._variable("${SNAPSHOT_SAVE_ACTUAL}", False)):
                 actual_path = self._save_actual(path, text)
-            self._log_diff(result.diff)
             if actual_path:
                 logger.info(f"Actual value saved to '{actual_path}'.")
-            raise AssertionError(core.mismatch_message(label, result.diff, self._max_message_lines()))
+            message, omitted = core.mismatch_message(label, result.diff, self._max_message_lines())
+            if omitted:
+                # Only then does the log add something; Robot Framework shows the message itself anyway.
+                shown = len(result.diff) - omitted
+                self._log_diff(result.diff, f"Full diff. The failure message shows the first {shown} of {len(result.diff)} lines:")
+            raise AssertionError(message)
 
     def _active_normalizers(self, extra) -> List[normalizing.Normalizer]:
         active = list(self._global_normalizers)
@@ -487,7 +491,7 @@ class SnapshotLibrary:
         return target
 
     @staticmethod
-    def _log_diff(diff: List[str]):
+    def _log_diff(diff: List[str], title: str):
         if not diff:
             return
         styles = {"+": "color:#1a7f37", "-": "color:#cf222e", "@": "color:#6e7781"}
@@ -498,6 +502,7 @@ class SnapshotLibrary:
             lines.append(f'<span style="{style}">{escaped}</span>' if style else escaped)
         # The whole diff, in a box that scrolls once it is long, so a big diff does not flood the log.
         logger.info(
-            '<pre style="margin:0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre>",
+            f"<b>{html.escape(title)}</b>"
+            '<pre style="margin:4px 0 0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre>",
             html=True,
         )

@@ -22,7 +22,7 @@ def test_matching_snapshot_passes_and_is_untouched(tmp_path):
 def test_mismatch_fails_with_diff_and_keeps_snapshot(tmp_path):
     path = tmp_path / "t.txt"
     store.write(path, "a\nb\n")
-    result = core.check(path, "a\nc\n", label="t.txt")
+    result = core.check(path, "a\nc\n")
     assert result.outcome is Outcome.MISMATCH and not result.passed
     assert "-b" in result.diff and "+c" in result.diff
     assert store.read(path) == "a\nb\n"
@@ -119,7 +119,8 @@ def _diff(count, width=10):
 
 
 def test_short_diff_is_shown_whole():
-    message = core.mismatch_message("a.txt", _diff(5), 40)
+    message, omitted = core.mismatch_message("a.txt", _diff(5), 40)
+    assert omitted == 0
     assert message.count("\n-") == 5
     assert "more diff line" not in message
     assert message.endswith(core.UPDATE_HINT)
@@ -129,7 +130,8 @@ def test_short_diff_is_shown_whole():
 @pytest.mark.parametrize("width", [10, 100, 300])
 def test_long_diff_is_shortened_so_robot_does_not_cut_it(max_lines, width):
     diff = _diff(500, width)
-    message = core.mismatch_message("a.txt", diff, max_lines)
+    message, omitted = core.mismatch_message("a.txt", diff, max_lines)
+    assert omitted > 0
     assert not _robot_would_cut(message, max_lines)
     assert message.startswith("Snapshot 'a.txt' does not match.\n" + diff[0][:20])
     assert "more diff lines. The full diff is in the log; run with --maxerrorlines NONE" in message
@@ -137,12 +139,13 @@ def test_long_diff_is_shortened_so_robot_does_not_cut_it(max_lines, width):
 
 
 def test_count_of_omitted_lines_is_right():
-    message = core.mismatch_message("a.txt", _diff(100), 40)
-    shown = message.count("\n-")
-    assert f"... {100 - shown} more diff lines." in message
+    message, omitted = core.mismatch_message("a.txt", _diff(100), 40)
+    assert omitted == 100 - message.count("\n-")
+    assert f"... {omitted} more diff lines." in message
 
 
 def test_no_limit_shows_everything():
-    message = core.mismatch_message("a.txt", _diff(500), None)
+    message, omitted = core.mismatch_message("a.txt", _diff(500), None)
+    assert omitted == 0
     assert message.count("\n-") == 500
     assert "more diff line" not in message

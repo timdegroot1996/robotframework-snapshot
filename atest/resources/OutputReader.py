@@ -1,6 +1,6 @@
 """Reads the output.xml of a run started by `Run Tests`."""
 
-from robot.api import ExecutionResult
+from robot.api import ExecutionResult, ResultVisitor
 from robot.api.deco import keyword, library
 
 
@@ -29,6 +29,13 @@ class OutputReader:
         return self._test(name).message
 
     @keyword
+    def get_log_messages(self, name):
+        """All log messages written during test ``name``, at every level."""
+        collector = _MessageCollector()
+        self._test(name).visit(collector)
+        return collector.messages
+
+    @keyword
     def get_warnings(self):
         return list(self._warnings)
 
@@ -36,3 +43,11 @@ class OutputReader:
         if name not in self._tests:
             raise AssertionError(f"No test '{name}' in the run. Tests: {', '.join(self._tests) or 'none'}.")
         return self._tests[name]
+
+
+class _MessageCollector(ResultVisitor):
+    def __init__(self):
+        self.messages = []
+
+    def visit_message(self, message):
+        self.messages.append(message.message)

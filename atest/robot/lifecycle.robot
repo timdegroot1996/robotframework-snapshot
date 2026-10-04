@@ -48,6 +48,10 @@ Change Fails With A Diff In The Message
     Should Contain    ${message}    -line two
     Should Contain    ${message}    +changed text
     Should Contain    ${message}    REFERENCE_RUN:True
+    Should Contain    ${message}    --- snapshot\n+++ actual\n
+    # a diff that fits in the message is not logged a second time
+    ${messages}=    Get Log Messages    Text Snapshot
+    Should Not Contain Match    ${messages}    *Full diff*
     Snapshot Should Be    basics/Text_Snapshot.txt    line one\nline two\n
 
 Long Diff Is Shortened At The End, Not By Robot Framework
@@ -59,6 +63,8 @@ Long Diff Is Shortened At The End, Not By Robot Framework
     Should Contain    ${message}    +changed line 0
     Should Contain    ${message}    more diff lines. The full diff is in the log; run with --maxerrorlines NONE
     Should End With    ${message}    --variable REFERENCE_RUN:True
+    ${messages}=    Get Log Messages    Text Snapshot
+    Should Contain Match    ${messages}    *Full diff. The failure message shows the first * of * lines:*
 
 Long Diff Is Shown Whole Without A Message Limit
     Run Tests    basics.robot
@@ -91,6 +97,8 @@ Reference Run Updates
     Run Should Have Passed
     There Should Be No Warnings
     Snapshot Should Be    basics/Text_Snapshot.txt    new text\n
+    ${messages}=    Get Log Messages    Text Snapshot
+    Should Contain Match    ${messages}    *Changes written to the snapshot:*
     Run Tests    basics.robot    TEXT=new text
     Run Should Have Passed
 
