@@ -165,8 +165,15 @@ The command reads the usage records the library writes to
 `<output dir>/snapshot_usage/`. It also reports snapshot directories whose
 suite file no longer exists, which is what a renamed suite leaves behind.
 
-A snapshot that is only taken under a condition (inside an `IF`, say) is
-reported as unused in runs where the condition is false.
+Known limits:
+
+- A snapshot that is only taken under a condition (inside an `IF`, say) is
+  reported as unused in runs where the condition is false.
+- Directories left by a renamed suite are only found in the default
+  `__snapshots__` location. Under a custom `snapshot_directory` the library
+  cannot tell which suite file a directory belonged to.
+- Snapshots taken in the setup of a directory suite (`__init__.robot`) are only
+  judged when every test below that directory passed.
 
 ## Keywords
 
@@ -181,7 +188,10 @@ reported as unused in runs where the condition is false.
 `python -m SnapshotLibrary unused <output dir>` checks a finished run for
 unused snapshots.
 
-Generate the full keyword documentation with:
+Full keyword documentation:
+https://timdegroot1996.github.io/robotframework-snapshot/
+
+Or generate it locally with:
 
 ```bash
 libdoc SnapshotLibrary docs/SnapshotLibrary.html
