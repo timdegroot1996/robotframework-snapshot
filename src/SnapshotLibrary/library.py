@@ -16,7 +16,9 @@ from .core import Outcome
 from .version import __version__
 
 ACTUAL_DIR_NAME = "snapshot_actual"
-MAX_DIFF_LINES_IN_MESSAGE = 40
+# Robot Framework cuts failure messages longer than 40 lines (--maxerrorlines) in the middle;
+# 30 diff lines plus the header, the "more lines" note and the hint stay below that.
+MAX_DIFF_LINES_IN_MESSAGE = 30
 SCOPES = ("test", "suite", "global")
 
 
