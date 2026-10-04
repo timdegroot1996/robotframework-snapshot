@@ -55,7 +55,7 @@ class SnapshotLibrary:
     Snapshots are plain files meant to be committed:
     ``__snapshots__/<suite file name>/<test name>.<ext>`` next to the suite
     file. Text is stored as ``.txt``, dictionaries and lists as sorted,
-    indented ``.json``. A second snapshot in the same test gets the suffix
+    indented ``.json``, XML as canonical, indented ``.xml``. A second snapshot in the same test gets the suffix
     ``__2``, or ``__<name>`` when ``name=`` is given. With ``shared=True``
     the file is ``<name>.<ext>`` without the test name, so several tests can
     compare against one snapshot. A list of rows is written one row per line.
@@ -230,7 +230,7 @@ class SnapshotLibrary:
         | ``name`` | Name for this snapshot. Needed only to give several snapshots in one test readable file names. |
         | ``ignore`` | JSONPath of values to mask in structured data, for example ``$.id`` or ``$..updated_at``. Several paths: separate with ``;`` or pass a list. |
         | ``scrubbers`` | Extra scrubbers for this call only, comma separated. |
-        | ``format`` | ``auto`` (default), ``text`` or ``json``. Use ``json`` to store a JSON string in canonical form. |
+        | ``format`` | ``auto`` (default), ``text``, ``json`` or ``xml``. Use ``json`` or ``xml`` to store a JSON or XML string in canonical form. XML elements, for example from the XML library, are detected automatically. |
         | ``shared`` | Store the snapshot under ``name`` alone, without the test name, so several tests in the suite compare against the same file. Needs ``name``. |
 
         Examples:
@@ -238,6 +238,7 @@ class SnapshotLibrary:
         | `Should Match Snapshot`    ${rows}    name=runs    scrubbers=timezone
         | `Should Match Snapshot`    ${response.json()}    ignore=$.id;$..updated_at
         | `Should Match Snapshot`    ${response.text}    format=json
+        | `Should Match Snapshot`    ${soap_body}    format=xml
         | `Should Match Snapshot`    ${help_text}    name=help    shared=True
         """
         text, extension = core.prepare(value, format, ignore, self._active_scrubbers(scrubbers))
@@ -251,22 +252,30 @@ class SnapshotLibrary:
         scrubbers: Optional[Union[str, List[str]]] = None,
         encoding: str = "UTF-8",
         shared: bool = False,
+        format: str = "text",
     ):
         """Compares the text content of the file at ``path`` with its stored snapshot.
 
         Use it for files the system under test produced: reports, exports,
         generated configuration. The snapshot keeps the file's extension.
 
+        By default the content is compared as text. With ``format=json`` or
+        ``format=xml`` it is stored in canonical form, so key order, attribute
+        order and indentation do not matter.
+
         Examples:
         | `Should Match File Snapshot`    ${OUTPUT_DIR}/export.csv
         | `Should Match File Snapshot`    ${TEMPDIR}/report.html    scrubbers=timestamp
+        | `Should Match File Snapshot`    ${OUTPUT_DIR}/config.xml    format=xml
         """
         source = Path(path)
         if not source.is_file():
             raise AssertionError(f"File '{path}' does not exist.")
         with open(source, "r", encoding=encoding, newline="") as file:
             content = file.read()
-        text, _ = core.prepare(content, "text", None, self._active_scrubbers(scrubbers))
+        if (format or "text").lower() == "auto":
+            raise ValueError("format=auto is not supported for files. Use text, json or xml.")
+        text, _ = core.prepare(content, format, None, self._active_scrubbers(scrubbers))
         extension = source.suffix.lstrip(".") or serializers.TEXT
         self._assert(text, extension, name, shared)
 

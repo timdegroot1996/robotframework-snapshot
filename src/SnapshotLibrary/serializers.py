@@ -8,10 +8,13 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import PurePath
 from typing import Any, Tuple
+from xml.dom import minidom
+from xml.etree import ElementTree
 
 TEXT = "txt"
 JSON = "json"
-FORMATS = ("auto", "text", "json")
+XML = "xml"
+FORMATS = ("auto", "text", "json", "xml")
 
 
 def normalize_text(text: str) -> str:
@@ -74,16 +77,55 @@ def dump_json(data: Any) -> str:
     return _dump(data, 0, False) + "\n"
 
 
+def _is_xml_element(value: Any) -> bool:
+    if isinstance(value, ElementTree.ElementTree):
+        return True
+    if type(value).__module__.startswith("lxml"):
+        return hasattr(value, "tag") or hasattr(value, "getroot")
+    return isinstance(value, ElementTree.Element)
+
+
+def _element_to_string(value: Any) -> str:
+    if type(value).__module__.startswith("lxml"):
+        from lxml import etree
+
+        return etree.tostring(value, encoding="unicode")
+    if isinstance(value, ElementTree.ElementTree):
+        value = value.getroot()
+    return ElementTree.tostring(value, encoding="unicode")
+
+
+def canonical_xml(source: str) -> str:
+    """Canonical XML (C14N 2.0), indented two spaces per level.
+
+    Attributes are sorted, comments, the XML declaration and the doctype are
+    dropped, and whitespace around text and between elements is not
+    significant.
+    """
+    try:
+        canonical = ElementTree.canonicalize(source, strip_text=True)
+    except ElementTree.ParseError as error:
+        raise ValueError(f"format=xml was given but the value is not valid XML: {error}") from None
+    return minidom.parseString(canonical).documentElement.toprettyxml(indent="  ")
+
+
 def to_data(value: Any, fmt: str = "auto") -> Tuple[Any, str]:
     """Return ``(data, extension)``.
 
-    ``data`` is a string for text snapshots and a JSON-compatible structure
-    for JSON snapshots. Masking by JSONPath happens on that structure before
+    ``data`` is a string for text and XML snapshots and a JSON-compatible
+    structure for JSON snapshots. Masking by JSONPath happens on that structure before
     it is written out with `render`.
     """
     fmt = (fmt or "auto").lower()
     if fmt not in FORMATS:
         raise ValueError(f"Unknown snapshot format '{fmt}'. Use one of: {', '.join(FORMATS)}.")
+    if fmt in ("auto", "xml") and _is_xml_element(value):
+        return canonical_xml(_element_to_string(value)), XML
+    if fmt == "xml":
+        if not isinstance(value, (str, bytes)):
+            raise ValueError(f"format=xml needs an XML string or element, got {type(value).__name__}.")
+        # bytes go to the parser as they are, so an encoding declaration is honoured
+        return canonical_xml(value), XML
     if isinstance(value, bytes) and fmt != "json":
         value = value.decode("utf-8", errors="replace")
     if fmt == "text":

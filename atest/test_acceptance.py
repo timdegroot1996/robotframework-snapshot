@@ -120,6 +120,31 @@ def test_scrubbers_and_their_scopes(workspace):
     assert second.returncode == 0, second.stdout
 
 
+# -- xml ---------------------------------------------------------------------
+
+XML_A = '<?xml version="1.0"?><!-- note --><order b="2" a="1"><id>42</id>  <items><item/></items></order>'
+XML_B = '<order a="1" b="2">\n    <id>42</id>\n    <items>\n        <item></item>\n    </items>\n</order>'
+XML_EXPECTED = '<order a="1" b="2">\n  <id>42</id>\n  <items>\n    <item/>\n  </items>\n</order>\n'
+
+
+def test_xml_is_stored_canonical_and_layout_does_not_matter(workspace):
+    first = workspace.run("xml.robot", XML_TEXT=XML_A)
+    assert first.returncode == 0, first.stdout
+    snapshots = workspace.snapshots("xml")
+    assert names(snapshots) == [
+        "Xml_Element_Is_Detected.xml",
+        "Xml_File_In_Canonical_Form.xml",
+        "Xml_String_In_Canonical_Form.xml",
+    ]
+    for path in snapshots.iterdir():
+        assert path.read_text(encoding="utf-8") == XML_EXPECTED
+    second = workspace.run("xml.robot", XML_TEXT=XML_B, SNAPSHOT_STRICT=True)
+    assert second.returncode == 0, second.stdout
+    changed = workspace.run("xml.robot", XML_TEXT=XML_B.replace("42", "43"))
+    assert changed.returncode == 3
+    assert "+  <id>43</id>" in changed.message("Xml String In Canonical Form")
+
+
 # -- files, directories, suite setup ------------------------------------------
 
 def test_file_snapshot_and_custom_directory(workspace):

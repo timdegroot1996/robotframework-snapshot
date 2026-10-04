@@ -74,3 +74,47 @@ def test_empty_containers_and_nested_output_is_valid_json():
 
     value = {"a": [], "b": {}, "c": [{"x": [1, [2, 3]]}, []], "d": 'quote " and \\ backslash'}
     assert json.loads(serializers.render(*serializers.to_data(value))) == value
+
+
+def test_xml_string_is_canonicalised_with_format_xml():
+    data, ext = serializers.to_data('<?xml version="1.0"?><!-- c --><a z="1" y="2">  <b>text</b><c></c></a>', "xml")
+    assert ext == "xml"
+    assert serializers.render(data, ext) == '<a y="2" z="1">\n  <b>text</b>\n  <c/>\n</a>\n'
+
+
+def test_xml_layout_does_not_matter():
+    compact = serializers.render(*serializers.to_data("<a><b>1</b></a>", "xml"))
+    indented = serializers.render(*serializers.to_data("<a>\n    <b> 1 </b>\n</a>\n", "xml"))
+    assert compact == indented
+
+
+def test_xml_namespace_prefixes_are_kept():
+    text = serializers.render(*serializers.to_data('<s:Envelope xmlns:s="urn:soap"><s:Body/></s:Envelope>', "xml"))
+    assert text == '<s:Envelope xmlns:s="urn:soap">\n  <s:Body/>\n</s:Envelope>\n'
+
+
+def test_xml_bytes_honour_the_encoding_declaration():
+    source = '<?xml version="1.0" encoding="latin-1"?><a>café</a>'.encode("latin-1")
+    assert serializers.render(*serializers.to_data(source, "xml")) == "<a>café</a>\n"
+
+
+def test_xml_element_is_detected_automatically():
+    from xml.etree import ElementTree
+
+    data, ext = serializers.to_data(ElementTree.fromstring('<a b="1"><c>x</c></a>'))
+    assert ext == "xml"
+    assert serializers.render(data, ext) == '<a b="1">\n  <c>x</c>\n</a>\n'
+
+
+def test_xml_string_is_not_sniffed_in_auto_mode():
+    assert serializers.to_data("<a/>") == ("<a/>", "txt")
+
+
+def test_invalid_xml_with_format_xml_fails():
+    with pytest.raises(ValueError, match="not valid XML"):
+        serializers.to_data("<a>", "xml")
+
+
+def test_format_xml_rejects_other_types():
+    with pytest.raises(ValueError, match="needs an XML string or element"):
+        serializers.to_data({"a": 1}, "xml")

@@ -38,6 +38,7 @@ Requires Python 3.9+ and Robot Framework 6.1+.
 | Dictionaries and lists: API responses, parsed config | sorted, indented `.json` | `Should Match Snapshot    ${response.json()}` |
 | Rows: database query results, table contents | `.json`, one row per line | `Should Match Snapshot    ${rows}` |
 | A JSON string, in canonical form | `.json` | `Should Match Snapshot    ${body}    format=json` |
+| XML: a string with `format=xml`, or an element from the XML library | canonical, indented `.xml` | `Should Match Snapshot    ${body}    format=xml` |
 | A file the system produced | same extension | `Should Match File Snapshot    ${OUTPUT_DIR}/export.csv` |
 
 ### UI state as data
