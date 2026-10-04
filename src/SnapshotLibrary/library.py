@@ -58,7 +58,8 @@ class SnapshotLibrary:
     Use strict mode in CI, so a snapshot that was never committed fails the
     build instead of being recorded on the build machine.
 
-    The diff is shown in the failure message and the log. With
+    The failure message shows as much of the diff as fits within
+    ``--maxerrorlines``; the log has the full diff in colour. With
     ``save_actual=True`` or ``--variable SNAPSHOT_SAVE_ACTUAL:True`` the full
     actual value is also written to ``${OUTPUT_DIR}/snapshot_actual/``.
 
