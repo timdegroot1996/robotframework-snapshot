@@ -99,3 +99,50 @@ def test_shared_snapshot_path_has_no_test_name(tmp_path):
 def test_shared_snapshot_needs_a_name(tmp_path):
     with pytest.raises(ValueError, match="needs a name"):
         store.snapshot_path(tmp_path, "s", "t", "txt", None, shared=True)
+
+
+# -- failure message -----------------------------------------------------------
+
+def _robot_would_cut(message, max_lines):
+    from robot.utils import text
+
+    old = text.MAX_ERROR_LINES
+    text.MAX_ERROR_LINES = max_lines
+    try:
+        return text.cut_long_message(message) != message
+    finally:
+        text.MAX_ERROR_LINES = old
+
+
+def _diff(count, width=10):
+    return [f"-{'x' * width} {n}" for n in range(count)]
+
+
+def test_short_diff_is_shown_whole():
+    message = core.mismatch_message("a.txt", _diff(5), 40)
+    assert message.count("\n-") == 5
+    assert "more diff line" not in message
+    assert message.endswith(core.UPDATE_HINT)
+
+
+@pytest.mark.parametrize("max_lines", [11, 20, 40, 100])
+@pytest.mark.parametrize("width", [10, 100, 300])
+def test_long_diff_is_shortened_so_robot_does_not_cut_it(max_lines, width):
+    diff = _diff(500, width)
+    message = core.mismatch_message("a.txt", diff, max_lines)
+    assert not _robot_would_cut(message, max_lines)
+    assert message.startswith("Snapshot 'a.txt' does not match.\n" + diff[0][:20])
+    assert "more diff lines. The full diff is in the log; run with --maxerrorlines NONE" in message
+    assert message.endswith(core.UPDATE_HINT)
+
+
+def test_count_of_omitted_lines_is_right():
+    message = core.mismatch_message("a.txt", _diff(100), 40)
+    shown = message.count("\n-")
+    assert f"... {100 - shown} more diff lines." in message
+
+
+def test_no_limit_shows_everything():
+    message = core.mismatch_message("a.txt", _diff(500), None)
+    assert message.count("\n-") == 500
+    assert "more diff line" not in message

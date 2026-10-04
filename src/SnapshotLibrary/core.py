@@ -70,6 +70,45 @@ def prepare(
     return serializers.normalize_text(text), extension
 
 
+UPDATE_HINT = "If the change is intended, update the snapshot with: --variable REFERENCE_RUN:True"
+# Robot Framework counts a message line longer than this as several lines
+# when it checks a failure message against --maxerrorlines.
+_MESSAGE_LINE_WIDTH = 78
+
+
+def _message_lines(lines: Iterable[str]) -> int:
+    return sum(max(1, -(-len(line) // _MESSAGE_LINE_WIDTH)) for line in lines)
+
+
+def _omitted_note(count: int) -> str:
+    return (
+        f"... {count} more diff line{'s' if count != 1 else ''}. The full diff is in the log; "
+        "run with --maxerrorlines NONE to show it here."
+    )
+
+
+def mismatch_message(label: str, diff: List[str], max_lines: Optional[int] = None) -> str:
+    """The failure message for a snapshot that does not match.
+
+    Robot Framework removes the middle of a failure message that is longer
+    than ``max_lines`` (its ``--maxerrorlines``, ``None`` for no limit). To
+    keep the start of the diff readable the message is shortened here
+    instead: diff lines are shown from the top until the limit is reached,
+    followed by a note on how to see the rest.
+    """
+    header = [f"Snapshot '{label}' does not match."]
+    footer = ["", UPDATE_HINT]
+    if max_lines is None or _message_lines(header + diff + footer) <= max_lines:
+        return "\n".join(header + diff + footer)
+    budget = max_lines - _message_lines(header + footer + [_omitted_note(len(diff))])
+    shown: List[str] = []
+    for line in diff:
+        if _message_lines(shown + [line]) > budget:
+            break
+        shown.append(line)
+    return "\n".join(header + shown + [_omitted_note(len(diff) - len(shown))] + footer)
+
+
 def unified_diff(expected: str, actual: str, label: str) -> List[str]:
     return list(
         difflib.unified_diff(

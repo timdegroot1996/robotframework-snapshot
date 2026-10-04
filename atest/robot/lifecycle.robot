@@ -50,6 +50,24 @@ Change Fails With A Diff In The Message
     Should Contain    ${message}    REFERENCE_RUN:True
     Snapshot Should Be    basics/Text_Snapshot.txt    line one\nline two\n
 
+Long Diff Is Shortened At The End, Not By Robot Framework
+    Run Tests    basics.robot
+    ${long}=    Evaluate    "\\n".join(f"changed line {n}" for n in range(60))
+    Run Tests    basics.robot    TEXT=${long}
+    ${message}=    Get Test Message    Text Snapshot
+    Should Not Contain    ${message}    Message content over the limit has been removed
+    Should Contain    ${message}    +changed line 0
+    Should Contain    ${message}    more diff lines. The full diff is in the log; run with --maxerrorlines NONE
+    Should End With    ${message}    --variable REFERENCE_RUN:True
+
+Long Diff Is Shown Whole Without A Message Limit
+    Run Tests    basics.robot
+    ${long}=    Evaluate    "\\n".join(f"changed line {n}" for n in range(60))
+    Run Tests    basics.robot    --maxerrorlines    NONE    TEXT=${long}
+    ${message}=    Get Test Message    Text Snapshot
+    Should Contain    ${message}    +changed line 59
+    Should Not Contain    ${message}    more diff lines
+
 Actual Value Is Not Saved By Default
     Run Tests    basics.robot
     Run Tests    basics.robot    TEXT=changed text

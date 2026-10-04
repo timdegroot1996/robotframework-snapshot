@@ -16,9 +16,6 @@ from .core import Outcome
 from .version import __version__
 
 ACTUAL_DIR_NAME = "snapshot_actual"
-# Robot Framework cuts failure messages longer than 40 lines (--maxerrorlines) in the middle;
-# 30 diff lines plus the header, the "more lines" note and the hint stay below that.
-MAX_DIFF_LINES_IN_MESSAGE = 30
 SCOPES = ("test", "suite", "global")
 
 
@@ -416,14 +413,7 @@ class SnapshotLibrary:
             self._log_diff(result.diff)
             if actual_path:
                 logger.info(f"Actual value saved to '{actual_path}'.")
-            shown = result.diff[:MAX_DIFF_LINES_IN_MESSAGE]
-            if len(result.diff) > len(shown):
-                shown.append(f"... {len(result.diff) - len(shown)} more diff lines in the log")
-            raise AssertionError(
-                f"Snapshot '{label}' does not match.\n"
-                + "\n".join(shown)
-                + "\n\nIf the change is intended, update the snapshot with: --variable REFERENCE_RUN:True"
-            )
+            raise AssertionError(core.mismatch_message(label, result.diff, self._max_message_lines()))
 
     def _active_normalizers(self, extra) -> List[normalizing.Normalizer]:
         active = list(self._global_normalizers)
@@ -434,6 +424,16 @@ class SnapshotLibrary:
         for name in normalizing.split_names(extra):
             active.append(known.get(name) or normalizing.builtin(name))
         return active
+
+    @staticmethod
+    def _max_message_lines() -> Optional[int]:
+        """The --maxerrorlines of the current run, None when it is NONE."""
+        try:
+            from robot.utils import text
+
+            return text.MAX_ERROR_LINES
+        except Exception:  # not public API; fall back to Robot Framework's default
+            return 40
 
     def _variable(self, name: str, default=None):
         return BuiltIn().get_variable_value(name, default)
@@ -496,4 +496,8 @@ class SnapshotLibrary:
             style = styles.get(line[:1], "")
             escaped = html.escape(line)
             lines.append(f'<span style="{style}">{escaped}</span>' if style else escaped)
-        logger.info('<pre style="margin:0">' + "\n".join(lines) + "</pre>", html=True)
+        # The whole diff, in a box that scrolls once it is long, so a big diff does not flood the log.
+        logger.info(
+            '<pre style="margin:0; max-height:500px; overflow:auto">' + "\n".join(lines) + "</pre>",
+            html=True,
+        )

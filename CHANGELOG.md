@@ -14,5 +14,6 @@
 - Lists of rows are stored one row per line, so a changed row is one changed line.
 - Warning at the end of a suite for snapshot files no test used (`warn_unused`), and
   `python -m SnapshotLibrary unused <output dir> [--delete]` for parallel runs and CI.
-- Unified diff in the failure message and the log. With `save_actual` (or `SNAPSHOT_SAVE_ACTUAL`)
+- Unified diff in the failure message, shortened to fit `--maxerrorlines`, and in full in the log.
+  With `save_actual` (or `SNAPSHOT_SAVE_ACTUAL`)
   the actual value is also saved under `${OUTPUT_DIR}/snapshot_actual/`.

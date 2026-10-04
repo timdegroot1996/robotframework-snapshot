@@ -89,6 +89,10 @@ overwritten with the new value and the tests pass. Review the changed files like
 I recommend strict mode in CI. In default mode a snapshot you forgot to commit is simply recorded on the build machine,
 so the test passes without checking anything.
 
+The log always shows the full diff. The failure message shows as much of it as fits within Robot Framework's
+`--maxerrorlines` (40 lines by default), starting at the top, and says how many lines were left out. Run with
+`--maxerrorlines NONE` to get the whole diff in the message as well.
+
 By default the diff only ends up in the test message and the log. When you'd also like the full actual value as a file,
 for example to open it in a diff tool, switch on `save_actual`. It is then written to
 `${OUTPUT_DIR}/snapshot_actual/<suite file name>/` whenever a snapshot does not match:
