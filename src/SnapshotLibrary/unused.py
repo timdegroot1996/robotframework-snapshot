@@ -140,12 +140,21 @@ def orphan_directories(usages: Iterable[SuiteUsage]) -> List[Path]:
     Looks at every ``__snapshots__`` directory the run touched and reports
     sub-directories that match no suite file next to it. This catches a
     renamed or deleted suite, which leaves no usage record at all.
+
+    Only the default location counts: the ``__snapshots__`` directory next to
+    the suite that used it. A ``snapshot_directory`` that happens to be named
+    ``__snapshots__`` holds the folders of suites that live elsewhere, so it
+    says nothing about which suite files exist.
     """
     bases = set()
     for usage in usages:
+        if not usage.source:
+            continue
+        source = Path(usage.source)
+        default_base = _key((source if source.is_dir() else source.parent) / store.SNAPSHOT_DIR_NAME)
         for directory in usage.directories:
             base = Path(directory).parent
-            if base.name == store.SNAPSHOT_DIR_NAME:
+            if _key(base) == default_base:
                 bases.add(base)
     orphans: List[Path] = []
     for base in sorted(bases):

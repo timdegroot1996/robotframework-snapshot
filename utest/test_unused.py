@@ -78,6 +78,15 @@ def test_orphan_directory_of_a_removed_suite(tmp_path):
     assert unused.orphan_directories([usage]) == [base / "renamed_away"]
 
 
+def test_custom_directory_named_like_the_default_has_no_orphans(tmp_path):
+    # snapshot_directory=resources/__snapshots__ while the suites live in testsuites/
+    base = tmp_path / "resources" / "__snapshots__"
+    used = touch(base / "cli" / "a.txt")
+    source = str(touch(tmp_path / "testsuites" / "cli.robot"))
+    usage = SuiteUsage(source, 1, {"a": "PASS"}, {str(used)}, {str(base / "cli")})
+    assert unused.orphan_directories([usage]) == []
+
+
 def test_clear_records(tmp_path):
     unused.write_record(tmp_path, SuiteUsage("s.robot", 0))
     assert list((tmp_path / unused.USAGE_DIR_NAME).glob("*.json"))
