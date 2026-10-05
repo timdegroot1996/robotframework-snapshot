@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 (unreleased)
+## 0.1.1 (2026-10-05)
 
 - `python -m SnapshotLibrary unused` no longer reports every suite folder as orphaned, and no longer
   deletes them with `--delete`, when `snapshot_directory` points to a directory named `__snapshots__`.
